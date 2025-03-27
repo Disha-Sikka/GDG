@@ -33,7 +33,9 @@ This project is a Python-based application that helps in managing a voting syste
 
 ## 👩‍💻 Technologies Used
 - Python
-- [Other libraries, if any]
+- OpenCV
+- Numpy
+- Face Recognition Module
 
 ## 🤝 Contributing
 Feel free to open an issue or submit a pull request!
