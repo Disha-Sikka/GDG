@@ -1,0 +1,9 @@
+streamlit
+cv2
+pytesseract
+numpy
+face_recognition
+PIL
+pandas
+os
+uuid
