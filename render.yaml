@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: gdg-app
+    env: docker
+    plan: free
+    autoDeploy: true
