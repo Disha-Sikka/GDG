@@ -1,9 +1,7 @@
 streamlit
-cv2
+opencv-python
 pytesseract
 numpy
 face_recognition
-PIL
+Pillow
 pandas
-os
-uuid
