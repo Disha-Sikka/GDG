@@ -1,9 +1,3 @@
-import streamlit as st
-try:
-    import cv2
-    st.success("✅ OpenCV (cv2) imported successfully!")
-except ModuleNotFoundError:
-    st.error("❌ OpenCV (cv2) not installed!")
 
 import streamlit as st
 import cv2
