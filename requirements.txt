@@ -1,9 +1,9 @@
+tf-keras
+mediapipe
+tensorflow
+pytesseract
 streamlit
 opencv-python
-pytesseract
-numpy
---extra-index-url https://pypi.fury.io/justinshenk
-face_recognition
 Pillow
-pandas
-cmake
+numpy
+deepface
