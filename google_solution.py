@@ -6,9 +6,8 @@ from deepface import DeepFace
 import tempfile
 import os
 import mediapipe as mp
-import hashlib
-import csv
 from pathlib import Path
+import shutil
 
 # Streamlit config
 st.set_page_config(page_title="Voter Verification System", layout="centered")
@@ -63,17 +62,18 @@ def detect_and_crop_face(image, label=""):
 def is_duplicate_deepface(new_face_path, folder=verified_faces_dir):
     for fname in os.listdir(folder):
         existing_path = os.path.join(folder, fname)
-        try:
-            result = DeepFace.verify(
-                img1_path=new_face_path,
-                img2_path=existing_path,
-                model_name="ArcFace",
-                enforce_detection=False
-            )
-            if result.get("verified", False):
-                return True
-        except:
-            continue
+        if existing_path.endswith(".jpg"):
+            try:
+                result = DeepFace.verify(
+                    img1_path=new_face_path,
+                    img2_path=existing_path,
+                    model_name="ArcFace",
+                    enforce_detection=False
+                )
+                if result.get("verified", False):
+                    return True
+            except:
+                continue
     return False
 
 # Save verified face image
@@ -87,6 +87,13 @@ def save_verified_face_image(image):
     filename = f"face_{count}.jpg"
     path = os.path.join(verified_faces_dir, filename)
     cv2.imwrite(path, image)
+
+# Button to delete all stored verified face data
+if st.sidebar.button("🗑️ Clear Verified Data"):
+    shutil.rmtree(verified_faces_dir)
+    Path(verified_faces_dir).mkdir(exist_ok=True)
+    face_id_counter.write_text("0")
+    st.sidebar.success("All stored face data cleared.")
 
 # Image input
 def capture_image(label):
@@ -152,6 +159,7 @@ if st.button("🔍 Verify Voter Identity"):
                     threshold = result.get("threshold", None)
 
                     if verified:
+                        st.write(f"Distance: {distance:.4f} | Threshold: {threshold:.4f}")
                         # Check for duplicate using deepface
                         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as new_tmp:
                             cv2.imwrite(new_tmp.name, live_face_resized)
