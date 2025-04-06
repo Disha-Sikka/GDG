@@ -9,6 +9,8 @@ import pandas as pd
 import os
 import uuid
 
+st.write("App started ✅")
+
 # ---------- CSV Setup ----------
 CSV_FILE = "voted_voters.csv"
 VOTER_RECORDS_FILE = "voter_records.csv"
@@ -148,7 +150,7 @@ def is_face_already_voted(live_encoding, tolerance=0.5):
 # ---------- Menu ----------
 menu = ["🏠 Home", "🦔 Scan Voter Card", "🧑 Live Face Capture", "🔍 Verify", "✅ Vote"]
 choice = st.sidebar.selectbox("Navigation", menu)
-
+st.write("before✅")
 if choice == "🦔 Scan Voter Card":
     frame = capture_from_ip_camera("Voter Card")
     if frame is not None:
