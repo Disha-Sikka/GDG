@@ -1,263 +1,173 @@
-
 import streamlit as st
 import cv2
-import pytesseract
-import face_recognition
-from PIL import Image
 import numpy as np
-import pandas as pd
+from PIL import Image
+from deepface import DeepFace
+import tempfile
 import os
-import uuid
+import mediapipe as mp
+import hashlib
+import csv
+from pathlib import Path
 
-st.write("App started ✅")
-
-# ---------- CSV Setup ----------
-CSV_FILE = "voted_voters.csv"
-VOTER_RECORDS_FILE = "voter_records.csv"
-dataset_path = "voter_faces"
-
-def init_csv():
-    if not os.path.exists(CSV_FILE):
-        df = pd.DataFrame(columns=["voter_id"])
-        df.to_csv(CSV_FILE, index=False)
-    if not os.path.exists(VOTER_RECORDS_FILE):
-        df = pd.DataFrame(columns=["voter_id", "ocr_text", "card_face", "live_face"])
-        df.to_csv(VOTER_RECORDS_FILE, index=False)
-    if not os.path.exists(dataset_path):
-        os.makedirs(dataset_path)
-
-def has_already_voted(voter_id):
-    if os.path.exists(CSV_FILE):
-        df = pd.read_csv(CSV_FILE)
-        return voter_id in df["voter_id"].values
-    return False
-
-def mark_voter_as_voted(voter_id):
-    df = pd.read_csv(CSV_FILE)
-    df = pd.concat([df, pd.DataFrame([{"voter_id": voter_id}])], ignore_index=True)
-    df.to_csv(CSV_FILE, index=False)
-
-def save_voter_record(voter_id, ocr_text, card_face_path, live_face_path):
-    df = pd.read_csv(VOTER_RECORDS_FILE)
-    df = pd.concat([df, pd.DataFrame([{
-        "voter_id": voter_id,
-        "ocr_text": ocr_text,
-        "card_face_path": card_face_path,
-        "live_face_path": live_face_path
-    }])], ignore_index=True)
-    df.to_csv(VOTER_RECORDS_FILE, index=False)
-
-def extract_voter_id(text):
-    lines = text.split('\n')
-    for line in lines:
-        if any(char.isdigit() for char in line) and any(char.isalpha() for char in line):
-            return line.strip()
-    return None
-
-# ---------- Streamlit App ----------
+# Streamlit config
 st.set_page_config(page_title="Voter Verification System", layout="centered")
-st.title("🗳️ Secure Voter Verification System")
-init_csv()
-ip = st.sidebar.text_input("Enter your webcam IP address", "http://192.168.0.100:8080/video")
+st.title("🕳️ Voter Verification using Face Recognition")
+st.markdown("This application verifies a voter by comparing the face on their ID card with a live camera capture.")
 
-# Session state setup
-for key in ["verification_status", "ocr_text", "voter_id", "voter_id_image", "live_face_image", "card_face_path"]:
-    if key not in st.session_state:
-        st.session_state[key] = None
+# Sidebar
+st.sidebar.header("📷 Image Input Options")
+use_camera = st.sidebar.checkbox("Use Camera", value=True)
 
-# ---------- Functions ----------
-def image_to_bytes(img):
-    _, buffer = cv2.imencode('.jpg', img)
-    return buffer.tobytes()
+# Initialize Mediapipe face detection
+mp_face_detection = mp.solutions.face_detection
 
-def extract_text_and_boxes(image):
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    data = pytesseract.image_to_data(rgb, output_type=pytesseract.Output.DICT)
-    boxes = []
-    extracted_text = ""
-    for i in range(len(data['text'])):
-        if int(data['conf'][i]) > 30:
-            (x, y, w, h) = (data['left'][i], data['top'][i], data['width'][i], data['height'][i])
-            boxes.append((x, y, w, h, data['text'][i]))
-            extracted_text += data['text'][i] + " "
-    return extracted_text, boxes
+# Directory to store verified faces
+verified_faces_dir = "verified_faces"
+Path(verified_faces_dir).mkdir(exist_ok=True)
 
-def draw_boxes(image, boxes):
-    for (x, y, w, h, word) in boxes:
-        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        cv2.putText(image, word, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-    return image
+# Detect and crop face with padding and annotation
+def detect_and_crop_face(image, label=""):
+    with mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.6) as face_detection:
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = face_detection.process(rgb_image)
 
-def is_voter_card(text):
-    keywords = ["ELECTION", "COMMISSION", "INDIA", "VOTER", "IDENTITY", "CARD"]
-    count = sum(1 for word in keywords if word in text.upper())
-    return count >= 3
+        if not results.detections:
+            st.warning(f"No face detected in {label} image.")
+            return None, image
 
-def extract_face(image):
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    faces = face_recognition.face_locations(rgb)
-    if faces:
-        top, right, bottom, left = faces[0]
-        return rgb[top:bottom, left:right]
-    return None
+        detection = results.detections[0]
+        bbox = detection.location_data.relative_bounding_box
+        h, w, _ = image.shape
+        x1 = int(bbox.xmin * w)
+        y1 = int(bbox.ymin * h)
+        x2 = int((bbox.xmin + bbox.width) * w)
+        y2 = int((bbox.ymin + bbox.height) * h)
 
-def capture_from_ip_camera(label):
-    st.write(f"📸 Capture: {label}")
-    # Try converting to int if it's a number (like '0' or '1'), else keep as string
-    try:
-        source = int(ip)
-    except ValueError:
-        source = ip
+        # Add padding
+        padding = 20
+        x1 = max(x1 - padding, 0)
+        y1 = max(y1 - padding, 0)
+        x2 = min(x2 + padding, w)
+        y2 = min(y2 + padding, h)
 
-    cap = cv2.VideoCapture(source)
+        cropped_face = image[y1:y2, x1:x2]
 
-    frame_placeholder = st.empty()
-    capture_button = st.button(f"📷 Capture Frame for {label}")
+        # Annotate image
+        annotated = image.copy()
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-    img = None
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            st.error("⚠️ Cannot access the camera stream.")
-            break
-        frame_resized = cv2.resize(frame, (480, 320))
-        frame_placeholder.image(frame_resized, channels="BGR")
-        if capture_button:
-            img = frame
-            frame_placeholder.image(img, caption=f"Captured {label}", channels="BGR")
-            cap.release()
-            break
-    return img
+        return cropped_face, annotated
 
-def get_face_encoding(image):
-    rgb_img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    boxes = face_recognition.face_locations(rgb_img)
-    if boxes:
-        return face_recognition.face_encodings(rgb_img, known_face_locations=boxes)[0]
-    return None
-
-def is_face_already_voted(live_encoding, tolerance=0.5):
-    for filename in os.listdir(dataset_path):
-        if filename.endswith("_live.jpg"):
-            existing_img = face_recognition.load_image_file(os.path.join(dataset_path, filename))
-            existing_encs = face_recognition.face_encodings(existing_img)
-            if existing_encs:
-                match = face_recognition.compare_faces([existing_encs[0]], live_encoding, tolerance=tolerance)
-                if match[0]:
-                    return True
+# Compare with existing verified faces using DeepFace
+def is_duplicate_deepface(new_face_path, folder=verified_faces_dir):
+    for fname in os.listdir(folder):
+        existing_path = os.path.join(folder, fname)
+        try:
+            result = DeepFace.verify(
+                img1_path=new_face_path,
+                img2_path=existing_path,
+                model_name="ArcFace",
+                enforce_detection=False
+            )
+            if result.get("verified", False):
+                return True
+        except:
+            continue
     return False
 
-# ---------- Menu ----------
-menu = ["🏠 Home", "🦔 Scan Voter Card", "🧑 Live Face Capture", "🔍 Verify", "✅ Vote"]
-choice = st.sidebar.selectbox("Navigation", menu)
-st.write("before✅")
-if choice == "🦔 Scan Voter Card":
-    frame = capture_from_ip_camera("Voter Card")
-    if frame is not None:
-        st.image(frame, caption="Captured Voter Card", channels="BGR")
-        st.session_state.voter_id_image = frame
+# Save verified face image
+face_id_counter = Path(verified_faces_dir) / "counter.txt"
+if not face_id_counter.exists():
+    face_id_counter.write_text("0")
 
-        text, boxes = extract_text_and_boxes(frame)
-        boxed_image = draw_boxes(frame.copy(), boxes)
-        st.image(boxed_image, caption="Detected Text with Boxes", channels="BGR")
-        st.write("### Extracted Text:")
-        st.write(text)
+def save_verified_face_image(image):
+    count = int(face_id_counter.read_text()) + 1
+    face_id_counter.write_text(str(count))
+    filename = f"face_{count}.jpg"
+    path = os.path.join(verified_faces_dir, filename)
+    cv2.imwrite(path, image)
 
-        if is_voter_card(text):
-            voter_id = extract_voter_id(text)
-            if not voter_id:
-                st.error("❌ Voter ID not found in text.")
-            elif has_already_voted(voter_id):
-                st.warning("⚠️ This voter has already cast their vote.")
-            else:
-                st.success(f"✅ Voter ID Verified: {voter_id}")
-                st.session_state.voter_id = voter_id
-                st.session_state.ocr_text = text
+# Image input
+def capture_image(label):
+    st.subheader(f"{label} Image")
 
-                card_face = extract_face(frame)
-                if card_face is not None:
-                    card_face_path = os.path.join(dataset_path, f"{voter_id}_card.jpg")
-                    cv2.imwrite(card_face_path, cv2.cvtColor(card_face, cv2.COLOR_RGB2BGR))
-                    st.session_state.card_face_path = card_face_path
-                    st.image(card_face, caption="Extracted Face from Card", channels="RGB")
+    if use_camera:
+        picture = st.camera_input(f"Capture {label}")
+        if picture:
+            img = Image.open(picture)
+            img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            return img
+    else:
+        uploaded_file = st.file_uploader(f"Upload {label} image", type=["jpg", "jpeg", "png"])
+        if uploaded_file:
+            img = Image.open(uploaded_file)
+            img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            return img
+
+    return None
+
+# Load images
+id_image = capture_image("ID Card")
+live_image = capture_image("Live Face")
+
+# Main button
+if st.button("🔍 Verify Voter Identity"):
+    if id_image is None or live_image is None:
+        st.warning("Please provide both images before verification.")
+    else:
+        with st.spinner("Detecting faces and comparing..."):
+            try:
+                # Detect and crop
+                id_face, id_annotated = detect_and_crop_face(id_image, "ID Card")
+                live_face, live_annotated = detect_and_crop_face(live_image, "Live Face")
+
+                if id_face is None or live_face is None:
+                    st.error("Face not detected in one of the images.")
                 else:
-                    st.warning("⚠️ No face detected on Voter Card.")
-        else:
-            st.error("❌ Not verified as a Voter Card.")
+                    # Resize to standard size
+                    target_size = (224, 224)
+                    id_face_resized = cv2.resize(id_face, target_size)
+                    live_face_resized = cv2.resize(live_face, target_size)
 
-elif choice == "🧑 Live Face Capture":
-    face_img = capture_from_ip_camera("Live Face")
-    if face_img is not None:
-        st.session_state.live_face_image = face_img
+                    # Show annotated faces
+                    st.image(cv2.cvtColor(id_annotated, cv2.COLOR_BGR2RGB), caption="ID Card Face", use_container_width=True)
+                    st.image(cv2.cvtColor(live_annotated, cv2.COLOR_BGR2RGB), caption="Live Face", use_container_width=True)
 
-elif choice == "🔍 Verify":
-    if st.session_state.voter_id_image is None or st.session_state.live_face_image is None:
-        st.warning("Please upload your Voter ID and capture your live face first.")
-    else:
-        st.subheader("🔎 Verifying...")
+                    # Save temp images for comparison
+                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp1, \
+                         tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp2:
+                        cv2.imwrite(tmp1.name, id_face_resized)
+                        cv2.imwrite(tmp2.name, live_face_resized)
 
-        id_encoding = get_face_encoding(st.session_state.voter_id_image)
-        live_encoding = get_face_encoding(st.session_state.live_face_image)
+                        result = DeepFace.verify(
+                            img1_path=tmp1.name,
+                            img2_path=tmp2.name,
+                            model_name="ArcFace",
+                            enforce_detection=False
+                        )
 
-        if id_encoding is not None and live_encoding is not None:
-            # Load already voted encodings
-            duplicate_found = False
-            if os.path.exists(CSV_FILE):
-                df = pd.read_csv(CSV_FILE)
-                for _, row in df.iterrows():
-                    if "live_encoding" in row and pd.notna(row["live_encoding"]):
-                        known_encoding = np.fromstring(row["live_encoding"], sep=',')
-                        match = face_recognition.compare_faces([known_encoding], live_encoding)[0]
-                        if match:
-                            duplicate_found = True
-                            break
+                    verified = result.get("verified", False)
+                    distance = result.get("distance", None)
+                    threshold = result.get("threshold", None)
 
-            if duplicate_found:
-                st.error("❌ This face has already been used to vote.")
-                st.session_state.verification_status = False
-            elif has_already_voted(st.session_state.voter_id):
-                st.error("⚠️ This voter ID has already been used to vote.")
-                st.session_state.verification_status = False
-            else:
-                st.success("✅ Face Matched. Verification Successful!")
-                st.session_state.verification_status = True
-                st.session_state.live_encoding = live_encoding  # Save for later write
-        else:
-            st.error("⚠️ Face not detected in one or both images.")
+                    if verified:
+                        # Check for duplicate using deepface
+                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as new_tmp:
+                            cv2.imwrite(new_tmp.name, live_face_resized)
+                            if is_duplicate_deepface(new_tmp.name):
+                                st.warning("⚠️ Duplicate vote detected. This person has already voted.")
+                            else:
+                                save_verified_face_image(live_face_resized)
+                                st.success(f"✅ Voter verified!\nDistance: {distance:.4f} (Threshold: {threshold:.4f})")
+                                st.balloons()
+                        os.remove(new_tmp.name)
+                    else:
+                        st.error(f"❌ Face mismatch.\nDistance: {distance:.4f} (Threshold: {threshold:.4f})")
 
-elif choice == "✅ Vote":
-    if not st.session_state.verification_status:
-        st.warning("Please complete verification before voting.")
-    else:
-        st.subheader("🗳️ Cast Your Vote")
-        party = st.radio("Choose your party:", ["Party A", "Party B", "Party C"])
-        if st.button("Submit Vote"):
-            # Save live face image
-            live_face = extract_face(st.session_state.live_face_image)
-            if live_face is not None:
-                live_face_path = os.path.join(dataset_path, f"{st.session_state.voter_id}_live.jpg")
-                cv2.imwrite(live_face_path, cv2.cvtColor(live_face, cv2.COLOR_RGB2BGR))
-            else:
-                live_face_path = None
-                st.warning("⚠️ No face detected in live image.")
+                    # Clean up temp files
+                    os.remove(tmp1.name)
+                    os.remove(tmp2.name)
 
-            # Save to voter record
-            save_voter_record(
-                st.session_state.voter_id,
-                st.session_state.ocr_text,
-                st.session_state.card_face_path,
-                live_face_path
-            )
-
-            # Save to voted CSV with live encoding
-            if st.session_state.live_encoding is not None:
-                df = pd.read_csv(CSV_FILE)
-                df = pd.concat([df, pd.DataFrame([{
-                    "voter_id": st.session_state.voter_id,
-                    "live_encoding": ','.join(map(str, st.session_state.live_encoding))
-                }])], ignore_index=True)
-                df.to_csv(CSV_FILE, index=False)
-
-            st.success(f"🎉 Your vote for {party} has been cast successfully!")
-            # Reset status to prevent repeat voting without re-verification
-            st.session_state.verification_status = False
+            except Exception as e:
+                st.error(f"Verification failed: {e}")
