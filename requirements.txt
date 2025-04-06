@@ -2,7 +2,7 @@ streamlit
 opencv-python
 pytesseract
 numpy
-face_recognition==1.3.0
+--extra-index-url https://pypi.fury.io/justinshenk
 Pillow
 pandas
 cmake
