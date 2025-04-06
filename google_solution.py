@@ -56,6 +56,7 @@ def extract_voter_id(text):
 st.set_page_config(page_title="Voter Verification System", layout="centered")
 st.title("🗳️ Secure Voter Verification System")
 init_csv()
+ip = st.sidebar.text_input("Enter your webcam IP address", "http://192.168.0.100:8080/video")
 
 # Session state setup
 for key in ["verification_status", "ocr_text", "voter_id", "voter_id_image", "live_face_image", "card_face_path"]:
@@ -100,7 +101,14 @@ def extract_face(image):
 
 def capture_from_ip_camera(label):
     st.write(f"📸 Capture: {label}")
-    cap = cv2.VideoCapture("http://192.168.1.6:8080/video")
+    # Try converting to int if it's a number (like '0' or '1'), else keep as string
+    try:
+        source = int(ip)
+    except ValueError:
+        source = ip
+
+    cap = cv2.VideoCapture(source)
+
     frame_placeholder = st.empty()
     capture_button = st.button(f"📷 Capture Frame for {label}")
 
