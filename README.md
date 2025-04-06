@@ -1,6 +1,6 @@
 # GDG Project
 
-## 📝 Description
+## Description
 This project is a Python-based application that helps in managing a voting system. It allows users to register, cast votes, and ensures proper validation of voters.
 
 ## 📂 Project Structure
