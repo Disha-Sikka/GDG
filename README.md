@@ -24,7 +24,7 @@ opencv-python
 Pillow
 numpy
 deepface
-
+```
 
 ## How It Works
 
