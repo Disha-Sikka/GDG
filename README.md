@@ -1,45 +1,42 @@
-# GDG Project
+# Voter Verification System using Face Recognition
 
-## Description
-This project is a Python-based application that helps in managing a voting system. It allows users to register, cast votes, and ensures proper validation of voters.
+This is a Streamlit-based web application that verifies a voter's identity by comparing the face on their ID card with a live captured face. It also prevents duplicate voting by saving previously verified faces and checking against them.
 
-## 📂 Project Structure
+## Features
+
+- Face detection using MediaPipe
+- Face comparison using DeepFace (ArcFace or Facenet model)
+- Prevents duplicate votes using stored facial data
+- Upload or capture ID card and live face
+- Option to clear saved voter data
+
+## Requirements
+
+Install the following Python packages using the provided `requirements.txt`:
+
 ```
-- `main.py` - The main script that runs the voting system
-- `utils.py` - Contains helper functions for data processing
-- `database.py` - Manages voter registration and vote storage
-```
+tf-keras
+mediapipe
+tensorflow
+pytesseract
+streamlit
+opencv-python
+Pillow
+numpy
+deepface
 
-## 🚀 Features
-- ✅ Allows user registration
-- ✅ Validates voter eligibility
-- ✅ Ensures that each voter can vote only once
-- ✅ Stores voting results securely
 
-## 🔧 Installation & Usage
-1. **Clone the repository**  
-   ```bash
-   git clone https://github.com/Disha-Sikka/GDG.git
-   cd GDG
-   ```
-2. **Install dependencies** (if any)  
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Run the application**  
-   ```bash
-   python main.py
-   ```
+## How It Works
 
-## 👩‍💻 Technologies Used
-- Python
-- OpenCV
-- Numpy
-- Face Recognition Module
+- User uploads or captures two images: one from the ID card and one live face.
+- The app detects and crops the faces from both images.
+- The faces are compared using DeepFace.
+- If the faces match, the system checks whether this person has already voted.
+- If no match is found in previous records, their face is saved and vote is considered valid.
 
-## 🤝 Contributing
-Feel free to open an issue or submit a pull request!
+## Preventing Duplicate Voting
 
-## 📜 License
-This project is licensed under the MIT License.
+The app saves every verified face in a local folder called `verified_faces`. On each new attempt, it compares the new face with all saved ones using DeepFace. If a match is found, the system shows a "Duplicate vote" warning.
+
+To reset and clear all stored data, use the “Clear Verified Data” button in the sidebar.
 
